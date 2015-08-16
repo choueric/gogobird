@@ -19,8 +19,9 @@ var (
 )
 
 var (
-	api *anaconda.TwitterApi
-	ui  *cli.ColoredUi
+	api      *anaconda.TwitterApi
+	ui       *cli.ColoredUi
+	userInfo UserInfo
 )
 
 type User anaconda.User
@@ -91,19 +92,18 @@ func getUser(username string) bool {
 // Test_TwitterCredentials tests that non-empty Twitter credentials are set
 // Without this, all following tests will fail
 func testCredentials() bool {
-	if CONSUMER_KEY == "" || CONSUMER_SECRET == "" || ACCESS_TOKEN == "" || ACCESS_TOKEN_SECRET == "" {
+	if CONSUMER_KEY == "" || CONSUMER_SECRET == "" {
 		fmt.Printf("Credentials are invalid: at least one is empty")
 		return false
 	}
 	return true
 }
 
-// Test that creating a TwitterApi client creates a client with non-empty OAuth credentials
-func newTwitterApi() *anaconda.TwitterApi {
+func newTwitterApi(token string, secret string) *anaconda.TwitterApi {
 	anaconda.SetConsumerKey(CONSUMER_KEY)
 	anaconda.SetConsumerSecret(CONSUMER_SECRET)
-	api = anaconda.NewTwitterApi(ACCESS_TOKEN, ACCESS_TOKEN_SECRET)
 
+	api = anaconda.NewTwitterApi(token, secret)
 	if api.Credentials == nil {
 		fmt.Printf("Twitter Api client has empty (nil) credentials")
 		return nil
@@ -132,32 +132,36 @@ func doSearch(api *anaconda.TwitterApi, topic string) {
 	}
 }
 
-func initTwitterApi() {
+func initTwitterApi() bool {
 	if testCredentials() == false {
-		return
+		return false
 	}
 
-	if api = newTwitterApi(); api == nil {
+	userInfo, err := ReadAccessCredential()
+	if err != nil {
+		fmt.Printf("read Access Credentail fail: %v\n", err)
+		return false
+	}
+
+	api = newTwitterApi(userInfo.Token, userInfo.Secret)
+	if api == nil {
 		fmt.Printf("Twitter Api client has empty (nil) credentials")
-		return
+		return false
 	}
 
-	// doSearch(api, "天津")
-	// getUser("chou_eric")
-
-	/*
-		if postTweet("test from gogobird") == true {
-			fmt.Printf("post tweet success.\n")
-		} else {
-			fmt.Printf("post tweet fail.\n")
-		}
-	*/
+	ui.Info(fmt.Sprintf("Init Twitter API for [%s] success!\n", userInfo.Name))
+	return true
 }
 
+/***********************************************************************/
 type cmdSearch int
 
 func (cmd cmdSearch) Help() string {
 	return "search help"
+}
+
+func (cmd cmdSearch) Synopsis() string {
+	return "Used to search topic in twitter"
 }
 
 func (cmd cmdSearch) Run(args []string) int {
@@ -168,15 +172,85 @@ func (cmd cmdSearch) Run(args []string) int {
 	return 0
 }
 
-func (cmd cmdSearch) Synopsis() string {
-	return "Used to search topic in twitter"
-}
-
 func factorySearch() (cli.Command, error) {
 	var cmd cmdSearch
 	return cmd, nil
 }
 
+/***********************************************************************/
+type cmdAuth int
+
+func (cmd cmdAuth) Help() string {
+	return "authenticate using PIN-based method"
+}
+
+func (cmd cmdAuth) Synopsis() string {
+	return cmd.Help()
+}
+
+func (cmd cmdAuth) Run(args []string) int {
+	ui.Output("Authentication start ...")
+
+	url, err := GetAuthUrl()
+	if err != nil {
+		ui.Error(fmt.Sprintf("Get Authorization URL fail: %v\n", err))
+		return -1
+	}
+
+	ui.Info(fmt.Sprintf("Please open this URL: %s, and get the PIN code.", url))
+	verifier, err := ui.Ask("Please input the PIN code:")
+	if err != nil {
+		ui.Error("PIN code input invalid")
+		return -1
+	}
+
+	name, ret := DoAuth(verifier)
+	if ret == false {
+		ui.Error("DoAuth failed.")
+		return -2
+	}
+
+	ui.Info(fmt.Sprintf("authenticate [%s] success!\n", name))
+	return 0
+}
+
+func factoryAuth() (cli.Command, error) {
+	var cmd cmdAuth
+	return cmd, nil
+}
+
+/***********************************************************************/
+type cmdPost int
+
+func (cmd cmdPost) Help() string {
+	return "post a tweet"
+}
+
+func (cmd cmdPost) Synopsis() string {
+	return cmd.Help()
+}
+
+func (cmd cmdPost) Run(args []string) int {
+	tweet, err := ui.Ask("Please input the tweet:\n")
+	if err != nil {
+		ui.Error("PIN code input invalid")
+		return -1
+	}
+
+	if postTweet(tweet) == false {
+		ui.Error("post tweet failed.")
+		return -2
+	}
+	ui.Info("post tweet success!")
+	return 0
+}
+
+func factoryPost() (cli.Command, error) {
+	var cmd cmdPost
+	return cmd, nil
+}
+
+////////////////////////////////////////////////////////////////////////////////
 func main() {
 	ui = new(cli.ColoredUi)
 	if ui == nil {
@@ -198,10 +272,15 @@ func main() {
 	c := cli.NewCLI("app", "1.0.0")
 	c.Args = os.Args[1:]
 	c.Commands = map[string]cli.CommandFactory{
+		"auth":   factoryAuth,
 		"search": factorySearch,
+		"post":   factoryPost,
 	}
 
-	initTwitterApi()
+	if initTwitterApi() == false {
+		ui.Error("int twitter api failed.")
+		return
+	}
 
 	exitStatus, err := c.Run()
 	if err != nil {
