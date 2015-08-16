@@ -52,6 +52,14 @@ func (user User) String() string {
 		user.WithheldInCountries, user.WithheldScope)
 }
 
+func testCredentials() bool {
+	if CONSUMER_KEY == "" || CONSUMER_SECRET == "" {
+		fmt.Printf("Credentials are invalid: at least one is empty")
+		return false
+	}
+	return true
+}
+
 func postTweet(post string) bool {
 	_, err := api.PostTweet(post, url.Values{})
 	if err != nil {
@@ -303,6 +311,11 @@ func initUi() {
 }
 
 func main() {
+	if testCredentials() == false {
+		fmt.Printf("CONSUMER_KEY and CONSUMER_SECRET need to be set!\n")
+		return
+	}
+
 	anaconda.SetConsumerKey(CONSUMER_KEY)
 	anaconda.SetConsumerSecret(CONSUMER_SECRET)
 	initUi()
