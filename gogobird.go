@@ -12,10 +12,8 @@ import (
 )
 
 var (
-	CONSUMER_KEY        = os.Getenv("CONSUMER_KEY")
-	CONSUMER_SECRET     = os.Getenv("CONSUMER_SECRET")
-	ACCESS_TOKEN        = os.Getenv("ACCESS_TOKEN")
-	ACCESS_TOKEN_SECRET = os.Getenv("ACCESS_TOKEN_SECRET")
+	CONSUMER_KEY    = os.Getenv("CONSUMER_KEY")
+	CONSUMER_SECRET = os.Getenv("CONSUMER_SECRET")
 )
 
 var (
@@ -89,20 +87,7 @@ func getUser(username string) bool {
 	return true
 }
 
-// Test_TwitterCredentials tests that non-empty Twitter credentials are set
-// Without this, all following tests will fail
-func testCredentials() bool {
-	if CONSUMER_KEY == "" || CONSUMER_SECRET == "" {
-		fmt.Printf("Credentials are invalid: at least one is empty")
-		return false
-	}
-	return true
-}
-
 func newTwitterApi(token string, secret string) *anaconda.TwitterApi {
-	anaconda.SetConsumerKey(CONSUMER_KEY)
-	anaconda.SetConsumerSecret(CONSUMER_SECRET)
-
 	api = anaconda.NewTwitterApi(token, secret)
 	if api.Credentials == nil {
 		fmt.Printf("Twitter Api client has empty (nil) credentials")
@@ -133,10 +118,6 @@ func doSearch(api *anaconda.TwitterApi, topic string) {
 }
 
 func initTwitterApi() bool {
-	if testCredentials() == false {
-		return false
-	}
-
 	userInfo, err := ReadAccessCredential()
 	if err != nil {
 		fmt.Printf("read Access Credentail fail: %v\n", err)
@@ -250,8 +231,59 @@ func factoryPost() (cli.Command, error) {
 	return cmd, nil
 }
 
+/***********************************************************************/
+type cmdGetFollowers int
+
+func (cmd cmdGetFollowers) Help() string {
+	return "get followers [user_name]"
+}
+
+func (cmd cmdGetFollowers) Synopsis() string {
+	return cmd.Help()
+}
+
+func factoryGetFollowers() (cli.Command, error) {
+	var cmd cmdGetFollowers
+	return cmd, nil
+}
+
+func (cmd cmdGetFollowers) Run(args []string) int {
+	vals := url.Values{}
+
+	// to get args[0]'s followers list
+	if len(args) == 1 {
+		vals.Set("screen_name", args[0])
+	}
+
+	ui.Info("Followers:")
+
+	for {
+		usersCursor, err := api.GetFollowersList(vals)
+		if err != nil {
+			ui.Error(fmt.Sprintf("get followers fail: %v", err))
+			return -1
+		}
+
+		for _, u := range usersCursor.Users {
+			ui.Info(fmt.Sprintf("    @%s, %s", u.ScreenName, u.Name))
+		}
+
+		if usersCursor.Next_cursor != 0 {
+			yn, _ := ui.Ask("continue: y/n ? : ")
+			if yn == "n" {
+				break
+			}
+		} else {
+			break
+		}
+		vals.Set("cursor", usersCursor.Next_cursor_str)
+	}
+	return 0
+}
+
 ////////////////////////////////////////////////////////////////////////////////
-func main() {
+
+func initUi() {
 	ui = new(cli.ColoredUi)
 	if ui == nil {
 		fmt.Printf("error of ui\n")
@@ -268,18 +300,27 @@ func main() {
 	ui.InfoColor = cli.UiColorGreen
 	ui.ErrorColor = cli.UiColorRed
 	ui.WarnColor = cli.UiColorYellow
+}
 
-	c := cli.NewCLI("app", "1.0.0")
+func main() {
+	anaconda.SetConsumerKey(CONSUMER_KEY)
+	anaconda.SetConsumerSecret(CONSUMER_SECRET)
+	initUi()
+
+	c := cli.NewCLI("gogobird", "0.0.1")
 	c.Args = os.Args[1:]
 	c.Commands = map[string]cli.CommandFactory{
-		"auth":   factoryAuth,
-		"search": factorySearch,
-		"post":   factoryPost,
+		"auth":      factoryAuth,
+		"search":    factorySearch,
+		"post":      factoryPost,
+		"followers": factoryGetFollowers,
 	}
 
-	if initTwitterApi() == false {
-		ui.Error("int twitter api failed.")
-		return
+	if len(c.Args) >= 1 && os.Args[1] != "auth" {
+		if initTwitterApi() == false {
+			ui.Error("init twitter api failed.")
+			return
+		}
 	}
 
 	exitStatus, err := c.Run()
