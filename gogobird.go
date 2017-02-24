@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"net/url"
@@ -12,14 +13,10 @@ import (
 )
 
 var (
-	CONSUMER_KEY    = os.Getenv("CONSUMER_KEY")
-	CONSUMER_SECRET = os.Getenv("CONSUMER_SECRET")
-)
-
-var (
 	api      *anaconda.TwitterApi
 	ui       *cli.ColoredUi
 	userInfo UserInfo
+	config   *Config
 )
 
 type User anaconda.User
@@ -52,12 +49,12 @@ func (user User) String() string {
 		user.WithheldInCountries, user.WithheldScope)
 }
 
-func testCredentials() bool {
-	if CONSUMER_KEY == "" || CONSUMER_SECRET == "" {
-		fmt.Printf("Credentials are invalid: at least one is empty")
-		return false
+func testCredentials() error {
+	config = getConfig()
+	if config.ConsumerKey == "" || config.ConsumerSecret == "" {
+		return errors.New("Credentials are invalid: at least one is empty")
 	}
-	return true
+	return nil
 }
 
 func postTweet(post string) bool {
@@ -311,13 +308,13 @@ func initUi() {
 }
 
 func main() {
-	if testCredentials() == false {
-		fmt.Printf("CONSUMER_KEY and CONSUMER_SECRET need to be set!\n")
-		return
+	if err := testCredentials(); err != nil {
+		fmt.Println(err)
+		os.Exit(1)
 	}
 
-	anaconda.SetConsumerKey(CONSUMER_KEY)
-	anaconda.SetConsumerSecret(CONSUMER_SECRET)
+	anaconda.SetConsumerKey(config.ConsumerKey)
+	anaconda.SetConsumerSecret(config.ConsumerSecret)
 	initUi()
 
 	c := cli.NewCLI("gogobird", "0.0.1")
