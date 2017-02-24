@@ -7,14 +7,22 @@ import (
 )
 
 const DefContent = `{
+	"proxy":"127.0.0.1:1080",
+	"user":"",
 	"consumer_key": "",
-	"consumer_secret": ""
+	"consumer_secret": "",
+	"access_token":"",
+	"access_token_secret":""
 }
 `
 
 type Config struct {
-	ConsumerKey    string `json:"consumer_key"`
-	ConsumerSecret string `json:"consumer_secret"`
+	ProxyAddr         string `json:"proxy"`
+	UserName          string `json:"user"`
+	ConsumerKey       string `json:"consumer_key"`
+	ConsumerSecret    string `json:"consumer_secret"`
+	AccessToken       string `json:"access_token""`
+	AccessTokenSecret string `json:"access_token_secret""`
 }
 
 func getConfig() *Config {

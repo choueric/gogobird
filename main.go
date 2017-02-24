@@ -4,19 +4,23 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net"
+	"net/http"
 	"net/url"
 	"os"
 	"reflect"
+	"time"
+
+	"golang.org/x/net/proxy"
 
 	"github.com/ChimeraCoder/anaconda"
 	"github.com/mitchellh/cli"
 )
 
 var (
-	api      *anaconda.TwitterApi
-	ui       *cli.ColoredUi
-	userInfo UserInfo
-	config   *Config
+	api    *anaconda.TwitterApi
+	ui     *cli.ColoredUi
+	config *Config
 )
 
 type User anaconda.User
@@ -92,15 +96,6 @@ func getUser(username string) bool {
 	return true
 }
 
-func newTwitterApi(token string, secret string) *anaconda.TwitterApi {
-	api = anaconda.NewTwitterApi(token, secret)
-	if api.Credentials == nil {
-		fmt.Printf("Twitter Api client has empty (nil) credentials")
-		return nil
-	}
-	return api
-}
-
 func doSearch(api *anaconda.TwitterApi, topic string) {
 	// Test that the GetSearch function actually works and returns non-empty results
 	search_result, err := api.GetSearch(topic, nil)
@@ -122,21 +117,24 @@ func doSearch(api *anaconda.TwitterApi, topic string) {
 	}
 }
 
-func initTwitterApi() bool {
-	userInfo, err := ReadAccessCredential()
+func initTwitterApi() error {
+	client, err := Socks5Client(config.ProxyAddr)
 	if err != nil {
-		fmt.Printf("read Access Credentail fail: %v\n", err)
-		return false
+		return err
 	}
 
-	api = newTwitterApi(userInfo.Token, userInfo.Secret)
+	api = anaconda.NewTwitterApi(config.AccessToken, config.AccessTokenSecret, client)
 	if api == nil {
-		fmt.Printf("Twitter Api client has empty (nil) credentials")
-		return false
+		fmt.Println("Twitter Api failed.")
+		return errors.New("create Twitter Api failed.")
+	}
+	if api.Credentials == nil {
+		fmt.Println("Twitter Api client has empty (nil) credentials")
+		return errors.New("empty (nil) Credentials")
 	}
 
-	ui.Info(fmt.Sprintf("Init Twitter API for [%s] success!\n", userInfo.Name))
-	return true
+	ui.Info(fmt.Sprintf("Init Twitter API for [%s] success!\n", config.UserName))
+	return nil
 }
 
 /***********************************************************************/
@@ -307,6 +305,29 @@ func initUi() {
 	ui.WarnColor = cli.UiColorYellow
 }
 
+func Socks5Client(addr string, auth ...*proxy.Auth) (client *http.Client, err error) {
+	dialer, err := proxy.SOCKS5("tcp", addr,
+		nil,
+		&net.Dialer{
+			Timeout:   10 * time.Second,
+			KeepAlive: 30 * time.Second,
+		},
+	)
+	if err != nil {
+		return
+	}
+
+	transport := &http.Transport{
+		Proxy:               nil,
+		Dial:                dialer.Dial,
+		TLSHandshakeTimeout: 10 * time.Second,
+	}
+
+	client = &http.Client{Transport: transport}
+
+	return
+}
+
 func main() {
 	if err := testCredentials(); err != nil {
 		fmt.Println(err)
@@ -327,9 +348,10 @@ func main() {
 	}
 
 	if len(c.Args) >= 1 && os.Args[1] != "auth" {
-		if initTwitterApi() == false {
+		if err := initTwitterApi(); err != nil {
+			fmt.Println(err)
 			ui.Error("init twitter api failed.")
-			return
+			os.Exit(1)
 		}
 	}
 
